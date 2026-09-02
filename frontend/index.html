@@ -1,0 +1,344 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<title>AI 조별과제 매니저</title>
+<style>
+  body { font-family: sans-serif; max-width: 640px; margin: 40px auto; padding: 0 16px; }
+  h1 { font-size: 1.6em; }
+  h2 { font-size: 1.15em; margin-top: 32px; border-bottom: 1px solid #ddd; padding-bottom: 6px; }
+  label { display: block; margin-top: 12px; font-size: 0.9em; color: #333; }
+  input, select, textarea { width: 100%; padding: 8px; margin-top: 4px; box-sizing: border-box; font-size: 0.95em; }
+  button { margin-top: 14px; padding: 10px 18px; cursor: pointer; border: none; border-radius: 4px; background: #2563eb; color: white; font-size: 0.95em; }
+  button:hover { background: #1d4ed8; }
+  button.secondary { background: #6b7280; }
+  button.secondary:hover { background: #4b5563; }
+  .hidden { display: none; }
+  .progress-bar-bg { background: #e5e7eb; border-radius: 6px; height: 20px; overflow: hidden; margin-top: 8px; }
+  .progress-bar-fill { background: #22c55e; height: 100%; text-align: center; color: white; font-size: 0.8em; line-height: 20px; transition: width 0.3s; }
+  .task-card { border: 1px solid #ddd; border-radius: 6px; padding: 12px; margin-top: 10px; }
+  .task-title { font-weight: bold; word-break: keep-all; flex: 1; min-width: 0; }
+  .task-meta { font-size: 0.85em; color: #666; margin-top: 4px; }
+  .ai-hint { font-size: 0.85em; color: #7c3aed; margin-top: 6px; }
+  .member-chip { display: inline-block; background: #eef2ff; border-radius: 12px; padding: 4px 10px; margin: 4px 4px 0 0; font-size: 0.85em; }
+  .share-box { background: #f0fdf4; border: 1px solid #bbf7d0; padding: 10px; border-radius: 6px; margin-top: 10px; font-size: 0.9em; }
+  .error-box { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; padding: 10px; border-radius: 6px; margin-top: 10px; font-size: 0.9em; }
+  .loading { color: #666; font-style: italic; }
+</style>
+</head>
+<body>
+
+<h1>🤖 AI 조별과제 매니저</h1>
+
+<!-- 배포 후에는 이 값을 실제 백엔드 배포 URL로 바꿔주세요 -->
+<script>const BACKEND_URL = "http://localhost:8000";</script>
+
+<!-- ========== 1. 프로젝트 생성 / 초대링크 참여 ========== -->
+<div id="setup-section">
+  <h2>1. 프로젝트 시작하기</h2>
+
+  <div id="create-form">
+    <label>과제명
+      <input type="text" id="p-title" placeholder="예: 데이터마이닝 기말 프로젝트" />
+    </label>
+    <label>유형
+      <select id="p-type">
+        <option value="보고서형/PPT">보고서형/PPT</option>
+        <option value="앱·웹 프로젝트">앱·웹 프로젝트</option>
+        <option value="케이스 스터디">케이스 스터디</option>
+        <option value="자료정리형">자료정리형</option>
+        <option value="기타">기타 (직접 입력)</option>
+      </select>
+    </label>
+    <input type="text" id="p-type-custom" placeholder="유형을 직접 입력하세요" class="hidden" />
+    <label>주제
+      <input type="text" id="p-topic" placeholder="예: 학생 성적 예측 모델 만들기" />
+    </label>
+    <label>최종 데드라인
+      <input type="date" id="p-deadline" />
+    </label>
+    <button onclick="createProject()">프로젝트 만들기</button>
+  </div>
+
+  <p style="margin-top:20px;">이미 초대 링크(코드)가 있으신가요?</p>
+  <label>초대 코드
+    <input type="text" id="join-code" placeholder="예: 5e42e263" />
+  </label>
+  <button class="secondary" onclick="joinProject()">참여하기</button>
+
+  <div id="setup-error"></div>
+</div>
+
+<!-- ========== 대시보드 (프로젝트 생성/참여 후 표시) ========== -->
+<div id="dashboard-section" class="hidden">
+  <h2 id="d-title"></h2>
+  <p id="d-meta" class="task-meta"></p>
+  <div class="share-box">
+    📎 초대 코드: <strong id="d-share-code"></strong> (팀원에게 이 코드를 공유하세요)
+  </div>
+  <button class="secondary" onclick="leaveProject()">다른 프로젝트로 이동</button>
+
+  <h2>2. AI 계획 생성</h2>
+  <button onclick="generatePlan()">🤖 AI로 계획 생성하기</button>
+  <span id="plan-loading" class="loading hidden">생성 중... (몇 초 걸릴 수 있어요)</span>
+
+  <h2>3. 팀원 등록</h2>
+  <label>이름
+    <input type="text" id="m-name" placeholder="예: 부성" />
+  </label>
+  <label>강점
+    <input type="text" id="m-strengths" placeholder="예: 발표, 데이터분석" />
+  </label>
+  <label>선호 우선순위 (선택)
+    <input type="text" id="m-priority" placeholder="예: 1순위 발표" />
+  </label>
+  <button onclick="addMember()">팀원 추가</button>
+  <div id="member-list" style="margin-top:10px;"></div>
+
+  <button class="secondary" onclick="recommendRoles()">🤖 역할 추천받기</button>
+  <span id="role-loading" class="loading hidden">추천 중...</span>
+
+  <h2>4. 작업 현황</h2>
+  <div class="progress-bar-bg">
+    <div class="progress-bar-fill" id="progress-fill" style="width:0%">0%</div>
+  </div>
+  <div id="task-list"></div>
+
+  <div id="dashboard-error"></div>
+</div>
+
+<script>
+let currentProjectId = localStorage.getItem("projectId");
+let members = [];
+
+function showError(elementId, message) {
+  document.getElementById(elementId).innerHTML =
+    `<div class="error-box">${message}</div>`;
+}
+function clearError(elementId) {
+  document.getElementById(elementId).innerHTML = "";
+}
+
+document.getElementById("p-type").addEventListener("change", (e) => {
+  document.getElementById("p-type-custom").classList.toggle("hidden", e.target.value !== "기타");
+});
+
+async function createProject() {
+  clearError("setup-error");
+  const title = document.getElementById("p-title").value.trim();
+  const typeSelect = document.getElementById("p-type").value;
+  const type = typeSelect === "기타"
+    ? document.getElementById("p-type-custom").value.trim()
+    : typeSelect;
+  const topic = document.getElementById("p-topic").value.trim();
+  const deadline = document.getElementById("p-deadline").value;
+
+  if (!title || !type || !topic || !deadline) {
+    showError("setup-error", "모든 항목을 입력해주세요.");
+    return;
+  }
+
+  try {
+    const res = await fetch(`${BACKEND_URL}/api/projects`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title, type, topic, deadline }),
+    });
+    if (!res.ok) throw new Error("서버 에러: " + res.status);
+    const data = await res.json();
+    loadProject(data.id);
+  } catch (err) {
+    showError("setup-error", "프로젝트 생성 실패: " + err.message);
+  }
+}
+
+async function joinProject() {
+  clearError("setup-error");
+  const code = document.getElementById("join-code").value.trim();
+  if (!code) {
+    showError("setup-error", "초대 코드를 입력해주세요.");
+    return;
+  }
+  try {
+    const res = await fetch(`${BACKEND_URL}/api/projects/by-code/${code}`);
+    if (!res.ok) throw new Error("유효하지 않은 초대 코드입니다.");
+    const data = await res.json();
+    loadProject(data.id);
+  } catch (err) {
+    showError("setup-error", err.message);
+  }
+}
+
+function loadProject(projectId) {
+  currentProjectId = projectId;
+  localStorage.setItem("projectId", projectId);
+  document.getElementById("setup-section").classList.add("hidden");
+  document.getElementById("dashboard-section").classList.remove("hidden");
+  refreshDashboard();
+}
+
+function leaveProject() {
+  localStorage.removeItem("projectId");
+  currentProjectId = null;
+  document.getElementById("setup-section").classList.remove("hidden");
+  document.getElementById("dashboard-section").classList.add("hidden");
+}
+
+async function refreshDashboard() {
+  clearError("dashboard-error");
+  try {
+    const res = await fetch(`${BACKEND_URL}/api/projects/${currentProjectId}`);
+    if (!res.ok) throw new Error("프로젝트 정보를 불러오지 못했습니다.");
+    const project = await res.json();
+    document.getElementById("d-title").innerText = project.title;
+    document.getElementById("d-meta").innerText =
+      `유형: ${project.type} | 주제: ${project.topic} | 데드라인: ${project.deadline}`;
+    document.getElementById("d-share-code").innerText = project.share_code;
+
+    await refreshMembers();
+    await refreshTasks();
+  } catch (err) {
+    showError("dashboard-error", err.message);
+  }
+}
+
+async function refreshMembers() {
+  const res = await fetch(`${BACKEND_URL}/api/projects/${currentProjectId}/members`);
+  members = await res.json();
+  const listDiv = document.getElementById("member-list");
+  if (members.length === 0) {
+    listDiv.innerHTML = "<span class='task-meta'>아직 등록된 팀원이 없어요.</span>";
+    return;
+  }
+  listDiv.innerHTML = members
+    .map((m) => `<span class="member-chip">${m.name} (${m.strengths || "강점 미입력"})</span>`)
+    .join("");
+}
+
+async function addMember() {
+  const name = document.getElementById("m-name").value.trim();
+  const strengths = document.getElementById("m-strengths").value.trim();
+  const priority = document.getElementById("m-priority").value.trim();
+
+  if (!name) {
+    showError("dashboard-error", "이름을 입력해주세요.");
+    return;
+  }
+
+  try {
+    const res = await fetch(`${BACKEND_URL}/api/projects/${currentProjectId}/members`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, strengths: strengths || null, priority: priority || null }),
+    });
+    if (!res.ok) throw new Error("팀원 등록 실패");
+    document.getElementById("m-name").value = "";
+    document.getElementById("m-strengths").value = "";
+    document.getElementById("m-priority").value = "";
+    clearError("dashboard-error");
+    await refreshMembers();
+  } catch (err) {
+    showError("dashboard-error", err.message);
+  }
+}
+
+async function generatePlan() {
+  clearError("dashboard-error");
+  document.getElementById("plan-loading").classList.remove("hidden");
+  try {
+    const res = await fetch(`${BACKEND_URL}/api/projects/${currentProjectId}/generate-plan`, {
+      method: "POST",
+    });
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.detail || "계획 생성 실패");
+    }
+    await refreshTasks();
+  } catch (err) {
+    showError("dashboard-error", err.message);
+  } finally {
+    document.getElementById("plan-loading").classList.add("hidden");
+  }
+}
+
+async function recommendRoles() {
+  clearError("dashboard-error");
+  document.getElementById("role-loading").classList.remove("hidden");
+  try {
+    const res = await fetch(`${BACKEND_URL}/api/projects/${currentProjectId}/recommend-roles`, {
+      method: "POST",
+    });
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.detail || "역할 추천 실패");
+    }
+    await refreshTasks();
+  } catch (err) {
+    showError("dashboard-error", err.message);
+  } finally {
+    document.getElementById("role-loading").classList.add("hidden");
+  }
+}
+
+async function refreshTasks() {
+  const res = await fetch(`${BACKEND_URL}/api/projects/${currentProjectId}/tasks`);
+  const data = await res.json();
+
+  const fill = document.getElementById("progress-fill");
+  fill.style.width = data.progress_percent + "%";
+  fill.innerText = data.progress_percent + "%";
+
+  const memberOptions = members.map((m) => `<option value="${m.id}">${m.name}</option>`).join("");
+
+  document.getElementById("task-list").innerHTML = data.tasks
+    .map((t) => {
+      const aiHint = t.ai_recommended_assignee
+        ? `<div class="ai-hint">🤖 AI 추천: ${t.ai_recommended_assignee}${t.ai_reasoning ? " — " + t.ai_reasoning : ""}</div>`
+        : "";
+      return `
+        <div class="task-card">
+          <label style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+            <input type="checkbox" style="flex-shrink:0;" ${t.done ? "checked" : ""} onchange="toggleDone(${t.id}, this.checked)" />
+            <span class="task-title" style="min-width:150px;">${t.title}</span>
+          </label>
+          <div class="task-meta">${t.description || ""}</div>
+          <div class="task-meta">마감일: ${t.due_date || "미정"} | 완료기준: ${t.review_criteria || "미설정"}</div>
+          ${aiHint}
+          <label>담당자
+            <select onchange="assignTask(${t.id}, this.value)">
+              <option value="">-- 선택 --</option>
+              ${memberOptions}
+            </select>
+          </label>
+        </div>
+      `;
+    })
+    .join("");
+}
+
+async function toggleDone(taskId, done) {
+  await fetch(`${BACKEND_URL}/api/tasks/${taskId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ done }),
+  });
+  await refreshTasks();
+}
+
+async function assignTask(taskId, assigneeId) {
+  if (!assigneeId) return;
+  await fetch(`${BACKEND_URL}/api/tasks/${taskId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ assignee_id: parseInt(assigneeId, 10) }),
+  });
+}
+
+// 페이지 로드 시, 저장된 프로젝트가 있으면 바로 대시보드로
+if (currentProjectId) {
+  loadProject(currentProjectId);
+}
+</script>
+
+</body>
+</html>
