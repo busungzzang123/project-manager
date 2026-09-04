@@ -1,0 +1,657 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>AI 조별과제 매니저</title>
+<style>
+  @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css');
+
+  :root {
+    --purple: #6C5CE7;
+    --purple-dark: #5A4BD1;
+    --purple-tint: #EFEBFC;
+    --teal: #17A398;
+    --teal-tint: #E3F6F3;
+    --coral: #F0645C;
+    --coral-tint: #FDEAE9;
+    --amber: #E8A33D;
+    --amber-tint: #FBF1DF;
+    --ink: #201F2B;
+    --ink-soft: #6B6979;
+    --line: #E8E6F1;
+    --bg: #F4F2FB;
+    --card: #FFFFFF;
+    --radius: 20px;
+    --radius-sm: 14px;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif;
+    max-width: 560px;
+    margin: 0 auto;
+    padding: 28px 18px 60px;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.5;
+  }
+
+  h1 {
+    font-size: 1.5em;
+    font-weight: 800;
+    margin: 4px 0 20px;
+    letter-spacing: -0.02em;
+  }
+
+  h2 {
+    font-size: 1.05em;
+    font-weight: 700;
+    margin: 28px 0 12px;
+    letter-spacing: -0.01em;
+  }
+
+  .card {
+    background: var(--card);
+    border-radius: var(--radius);
+    padding: 20px;
+    box-shadow: 0 2px 14px rgba(108, 92, 231, 0.06);
+    margin-bottom: 14px;
+  }
+
+  label {
+    display: block;
+    margin-top: 14px;
+    font-size: 0.85em;
+    font-weight: 600;
+    color: var(--ink-soft);
+  }
+
+  input, select, textarea {
+    width: 100%;
+    padding: 12px 14px;
+    margin-top: 6px;
+    border: 1.5px solid var(--line);
+    border-radius: var(--radius-sm);
+    font-size: 0.95em;
+    font-family: inherit;
+    background: #FBFAFF;
+    color: var(--ink);
+  }
+  input:focus, select:focus, textarea:focus {
+    outline: none;
+    border-color: var(--purple);
+    background: #fff;
+  }
+
+  button {
+    margin-top: 16px;
+    padding: 13px 20px;
+    cursor: pointer;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: var(--purple);
+    color: white;
+    font-size: 0.95em;
+    font-weight: 700;
+    font-family: inherit;
+    transition: transform 0.05s ease, background 0.15s ease;
+    width: 100%;
+  }
+  button:hover { background: var(--purple-dark); }
+  button:active { transform: scale(0.985); }
+
+  button.secondary {
+    background: var(--purple-tint);
+    color: var(--purple-dark);
+  }
+  button.secondary:hover { background: #E2DBFA; }
+
+  button.ai {
+    background: var(--teal);
+  }
+  button.ai:hover { background: #128F84; }
+
+  .hidden { display: none; }
+
+  .progress-wrap {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+  }
+
+  .progress-ring {
+    --pct: 0;
+    width: 84px;
+    height: 84px;
+    border-radius: 50%;
+    background: conic-gradient(var(--purple) calc(var(--pct) * 3.6deg), var(--purple-tint) 0);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .progress-ring::after {
+    content: attr(data-label);
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    background: var(--card);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    font-size: 1.05em;
+    color: var(--ink);
+  }
+
+  .progress-meta { flex: 1; }
+  .progress-meta .title { font-weight: 700; font-size: 1em; margin-bottom: 4px; }
+  .progress-meta .sub { font-size: 0.85em; color: var(--ink-soft); }
+
+  .dday {
+    display: inline-block;
+    margin-top: 8px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: var(--teal-tint);
+    color: var(--teal);
+    font-size: 0.78em;
+    font-weight: 700;
+  }
+
+  .task-card {
+    background: var(--card);
+    border-radius: var(--radius-sm);
+    padding: 16px;
+    margin-top: 10px;
+    box-shadow: 0 1px 8px rgba(108, 92, 231, 0.05);
+  }
+  .task-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .task-check {
+    width: 22px;
+    height: 22px;
+    flex-shrink: 0;
+    margin-top: 2px;
+    accent-color: var(--purple);
+  }
+  .task-body { flex: 1; min-width: 0; }
+  .task-title {
+    font-weight: 700;
+    font-size: 0.98em;
+    word-break: keep-all;
+  }
+  .task-title.done { text-decoration: line-through; color: var(--ink-soft); }
+  .task-meta {
+    font-size: 0.82em;
+    color: var(--ink-soft);
+    margin-top: 4px;
+  }
+  .ai-hint {
+    font-size: 0.82em;
+    color: var(--teal);
+    background: var(--teal-tint);
+    padding: 8px 10px;
+    border-radius: 10px;
+    margin-top: 10px;
+  }
+  .task-assignee-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 10px;
+  }
+  .avatar {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 0.75em;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+  .task-assignee-row select {
+    margin-top: 0;
+    flex: 1;
+    padding: 8px 10px;
+    font-size: 0.85em;
+  }
+
+  .member-list { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
+  .member-chip {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--card);
+    border-radius: 999px;
+    padding: 6px 14px 6px 6px;
+    box-shadow: 0 1px 6px rgba(108, 92, 231, 0.06);
+    font-size: 0.85em;
+  }
+  .member-chip .name { font-weight: 700; }
+  .member-chip .strengths { color: var(--ink-soft); }
+
+  .share-box {
+    background: var(--purple-tint);
+    border-radius: var(--radius-sm);
+    padding: 12px 16px;
+    margin-top: 14px;
+    font-size: 0.9em;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+  .share-box strong {
+    color: var(--purple-dark);
+    letter-spacing: 0.03em;
+  }
+
+  .error-box {
+    background: var(--coral-tint);
+    color: #B4302A;
+    padding: 12px 14px;
+    border-radius: var(--radius-sm);
+    margin-top: 12px;
+    font-size: 0.88em;
+  }
+
+  .loading {
+    display: inline-block;
+    margin-top: 10px;
+    color: var(--ink-soft);
+    font-size: 0.85em;
+    font-style: normal;
+  }
+
+  .divider {
+    height: 1px;
+    background: var(--line);
+    margin: 22px 0 0;
+  }
+</style>
+</head>
+<body>
+
+<h1>🤖 AI 조별과제 매니저</h1>
+
+<!-- 배포 후에는 이 값을 실제 백엔드 배포 URL로 바꿔주세요 -->
+<script>const BACKEND_URL = "https://project-manager-production-6ea7.up.railway.app";</script>
+
+<!-- ========== 1. 프로젝트 생성 / 초대링크 참여 ========== -->
+<div id="setup-section">
+  <div class="card" id="create-form">
+    <h2 style="margin-top:0;">프로젝트 시작하기</h2>
+    <label>과제명
+      <input type="text" id="p-title" placeholder="예: 데이터마이닝 기말 프로젝트" />
+    </label>
+    <label>유형
+      <select id="p-type">
+        <option value="보고서형/PPT">보고서형/PPT</option>
+        <option value="앱·웹 프로젝트">앱·웹 프로젝트</option>
+        <option value="케이스 스터디">케이스 스터디</option>
+        <option value="자료정리형">자료정리형</option>
+        <option value="기타">기타 (직접 입력)</option>
+      </select>
+    </label>
+    <input type="text" id="p-type-custom" placeholder="유형을 직접 입력하세요" class="hidden" style="margin-top:8px;" />
+    <label>주제
+      <input type="text" id="p-topic" placeholder="예: 학생 성적 예측 모델 만들기" />
+    </label>
+    <label>최종 데드라인
+      <input type="date" id="p-deadline" />
+    </label>
+    <button onclick="createProject()">프로젝트 만들기</button>
+  </div>
+
+  <div class="card">
+    <h2 style="margin-top:0;">이미 초대 코드가 있으신가요?</h2>
+    <label>초대 코드
+      <input type="text" id="join-code" placeholder="예: 5e42e263" />
+    </label>
+    <button class="secondary" onclick="joinProject()">참여하기</button>
+  </div>
+
+  <div id="setup-error"></div>
+</div>
+
+<!-- ========== 대시보드 (프로젝트 생성/참여 후 표시) ========== -->
+<div id="dashboard-section" class="hidden">
+
+  <div class="card">
+    <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px;">
+      <div>
+        <h2 style="margin:0 0 4px;" id="d-title"></h2>
+        <p class="task-meta" id="d-meta" style="margin:0;"></p>
+      </div>
+    </div>
+    <div class="share-box">
+      <span>📎 초대 코드 <strong id="d-share-code"></strong></span>
+    </div>
+    <button class="secondary" onclick="leaveProject()">다른 프로젝트로 이동</button>
+  </div>
+
+  <div class="card">
+    <div class="progress-wrap">
+      <div class="progress-ring" id="progress-ring" data-label="0%"></div>
+      <div class="progress-meta">
+        <div class="title">전체 진행률</div>
+        <div class="sub" id="progress-sub">아직 작업이 없어요</div>
+        <span class="dday" id="d-day"></span>
+      </div>
+    </div>
+  </div>
+
+  <h2>AI 계획 생성</h2>
+  <div class="card">
+    <button class="ai" onclick="generatePlan()">🤖 AI로 계획 생성하기</button>
+    <span id="plan-loading" class="loading hidden">생성 중... (몇 초 걸릴 수 있어요)</span>
+  </div>
+
+  <h2>팀원 등록</h2>
+  <div class="card">
+    <label>이름
+      <input type="text" id="m-name" placeholder="예: 부성" />
+    </label>
+    <label>강점
+      <input type="text" id="m-strengths" placeholder="예: 발표, 데이터분석" />
+    </label>
+    <label>선호 우선순위 (선택)
+      <input type="text" id="m-priority" placeholder="예: 1순위 발표" />
+    </label>
+    <button onclick="addMember()">팀원 추가</button>
+    <div class="member-list" id="member-list"></div>
+    <button class="secondary" onclick="recommendRoles()">🤖 역할 추천받기</button>
+    <span id="role-loading" class="loading hidden">추천 중...</span>
+  </div>
+
+  <h2>작업 현황</h2>
+  <div id="task-list"></div>
+
+  <div id="dashboard-error"></div>
+</div>
+
+<script>
+let currentProjectId = localStorage.getItem("projectId");
+let currentDeadline = null;
+let members = [];
+
+const AVATAR_COLORS = ["#6C5CE7", "#17A398", "#F0645C", "#3A86FF", "#E8A33D", "#B15EFF"];
+function colorForName(name) {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
+}
+function initials(name) {
+  return name.trim().slice(0, 2);
+}
+
+function showError(elementId, message) {
+  document.getElementById(elementId).innerHTML =
+    `<div class="error-box">${message}</div>`;
+}
+function clearError(elementId) {
+  document.getElementById(elementId).innerHTML = "";
+}
+
+document.getElementById("p-type").addEventListener("change", (e) => {
+  document.getElementById("p-type-custom").classList.toggle("hidden", e.target.value !== "기타");
+});
+
+async function createProject() {
+  clearError("setup-error");
+  const title = document.getElementById("p-title").value.trim();
+  const typeSelect = document.getElementById("p-type").value;
+  const type = typeSelect === "기타"
+    ? document.getElementById("p-type-custom").value.trim()
+    : typeSelect;
+  const topic = document.getElementById("p-topic").value.trim();
+  const deadline = document.getElementById("p-deadline").value;
+
+  if (!title || !type || !topic || !deadline) {
+    showError("setup-error", "모든 항목을 입력해주세요.");
+    return;
+  }
+
+  try {
+    const res = await fetch(`${BACKEND_URL}/api/projects`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title, type, topic, deadline }),
+    });
+    if (!res.ok) throw new Error("서버 에러: " + res.status);
+    const data = await res.json();
+    loadProject(data.id);
+  } catch (err) {
+    showError("setup-error", "프로젝트 생성 실패: " + err.message);
+  }
+}
+
+async function joinProject() {
+  clearError("setup-error");
+  const code = document.getElementById("join-code").value.trim();
+  if (!code) {
+    showError("setup-error", "초대 코드를 입력해주세요.");
+    return;
+  }
+  try {
+    const res = await fetch(`${BACKEND_URL}/api/projects/by-code/${code}`);
+    if (!res.ok) throw new Error("유효하지 않은 초대 코드입니다.");
+    const data = await res.json();
+    loadProject(data.id);
+  } catch (err) {
+    showError("setup-error", err.message);
+  }
+}
+
+function loadProject(projectId) {
+  currentProjectId = projectId;
+  localStorage.setItem("projectId", projectId);
+  document.getElementById("setup-section").classList.add("hidden");
+  document.getElementById("dashboard-section").classList.remove("hidden");
+  refreshDashboard();
+}
+
+function leaveProject() {
+  localStorage.removeItem("projectId");
+  currentProjectId = null;
+  document.getElementById("setup-section").classList.remove("hidden");
+  document.getElementById("dashboard-section").classList.add("hidden");
+}
+
+function renderDday(deadline) {
+  const el = document.getElementById("d-day");
+  if (!deadline) { el.textContent = ""; return; }
+  const today = new Date();
+  today.setHours(0,0,0,0);
+  const due = new Date(deadline);
+  const diff = Math.ceil((due - today) / (1000 * 60 * 60 * 24));
+  if (diff > 0) el.textContent = `마감 ${deadline} · D-${diff}`;
+  else if (diff === 0) el.textContent = `마감 ${deadline} · D-Day`;
+  else el.textContent = `마감 ${deadline} · 마감 지남`;
+}
+
+async function refreshDashboard() {
+  clearError("dashboard-error");
+  try {
+    const res = await fetch(`${BACKEND_URL}/api/projects/${currentProjectId}`);
+    if (!res.ok) throw new Error("프로젝트 정보를 불러오지 못했습니다.");
+    const project = await res.json();
+    document.getElementById("d-title").innerText = project.title;
+    document.getElementById("d-meta").innerText =
+      `유형: ${project.type} · 주제: ${project.topic}`;
+    document.getElementById("d-share-code").innerText = project.share_code;
+    currentDeadline = project.deadline;
+    renderDday(project.deadline);
+
+    await refreshMembers();
+    await refreshTasks();
+  } catch (err) {
+    showError("dashboard-error", err.message);
+  }
+}
+
+async function refreshMembers() {
+  const res = await fetch(`${BACKEND_URL}/api/projects/${currentProjectId}/members`);
+  members = await res.json();
+  const listDiv = document.getElementById("member-list");
+  if (members.length === 0) {
+    listDiv.innerHTML = "<span class='task-meta'>아직 등록된 팀원이 없어요.</span>";
+    return;
+  }
+  listDiv.innerHTML = members
+    .map((m) => `
+      <div class="member-chip">
+        <span class="avatar" style="background:${colorForName(m.name)}; width:26px; height:26px; font-size:0.7em;">${initials(m.name)}</span>
+        <span class="name">${m.name}</span>
+        <span class="strengths">${m.strengths ? "· " + m.strengths : ""}</span>
+      </div>
+    `)
+    .join("");
+}
+
+async function addMember() {
+  const name = document.getElementById("m-name").value.trim();
+  const strengths = document.getElementById("m-strengths").value.trim();
+  const priority = document.getElementById("m-priority").value.trim();
+
+  if (!name) {
+    showError("dashboard-error", "이름을 입력해주세요.");
+    return;
+  }
+
+  try {
+    const res = await fetch(`${BACKEND_URL}/api/projects/${currentProjectId}/members`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, strengths: strengths || null, priority: priority || null }),
+    });
+    if (!res.ok) throw new Error("팀원 등록 실패");
+    document.getElementById("m-name").value = "";
+    document.getElementById("m-strengths").value = "";
+    document.getElementById("m-priority").value = "";
+    clearError("dashboard-error");
+    await refreshMembers();
+  } catch (err) {
+    showError("dashboard-error", err.message);
+  }
+}
+
+async function generatePlan() {
+  clearError("dashboard-error");
+  document.getElementById("plan-loading").classList.remove("hidden");
+  try {
+    const res = await fetch(`${BACKEND_URL}/api/projects/${currentProjectId}/generate-plan`, {
+      method: "POST",
+    });
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.detail || "계획 생성 실패");
+    }
+    await refreshTasks();
+  } catch (err) {
+    showError("dashboard-error", err.message);
+  } finally {
+    document.getElementById("plan-loading").classList.add("hidden");
+  }
+}
+
+async function recommendRoles() {
+  clearError("dashboard-error");
+  document.getElementById("role-loading").classList.remove("hidden");
+  try {
+    const res = await fetch(`${BACKEND_URL}/api/projects/${currentProjectId}/recommend-roles`, {
+      method: "POST",
+    });
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.detail || "역할 추천 실패");
+    }
+    await refreshTasks();
+  } catch (err) {
+    showError("dashboard-error", err.message);
+  } finally {
+    document.getElementById("role-loading").classList.add("hidden");
+  }
+}
+
+async function refreshTasks() {
+  const res = await fetch(`${BACKEND_URL}/api/projects/${currentProjectId}/tasks`);
+  const data = await res.json();
+
+  const ring = document.getElementById("progress-ring");
+  ring.style.setProperty("--pct", data.progress_percent);
+  ring.setAttribute("data-label", data.progress_percent + "%");
+  document.getElementById("progress-sub").innerText =
+    `${data.done_count} / ${data.total_count} 작업 완료`;
+
+  const memberOptions = members.map((m) => `<option value="${m.id}">${m.name}</option>`).join("");
+
+  document.getElementById("task-list").innerHTML = data.tasks
+    .map((t) => {
+      const aiHint = t.ai_recommended_assignee
+        ? `<div class="ai-hint">🤖 AI 추천: ${t.ai_recommended_assignee}${t.ai_reasoning ? " — " + t.ai_reasoning : ""}</div>`
+        : "";
+      const assignee = members.find((m) => m.id === t.assignee_id);
+      const avatar = assignee
+        ? `<span class="avatar" style="background:${colorForName(assignee.name)};">${initials(assignee.name)}</span>`
+        : "";
+      return `
+        <div class="task-card">
+          <div class="task-row">
+            <input type="checkbox" class="task-check" ${t.done ? "checked" : ""} onchange="toggleDone(${t.id}, this.checked)" />
+            <div class="task-body">
+              <div class="task-title ${t.done ? "done" : ""}">${t.title}</div>
+              <div class="task-meta">${t.description || ""}</div>
+              <div class="task-meta">마감일: ${t.due_date || "미정"} · 완료기준: ${t.review_criteria || "미설정"}</div>
+              ${aiHint}
+              <div class="task-assignee-row">
+                ${avatar}
+                <select onchange="assignTask(${t.id}, this.value)">
+                  <option value="">담당자 선택</option>
+                  ${memberOptions}
+                </select>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    })
+    .join("");
+}
+
+async function toggleDone(taskId, done) {
+  await fetch(`${BACKEND_URL}/api/tasks/${taskId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ done }),
+  });
+  await refreshTasks();
+}
+
+async function assignTask(taskId, assigneeId) {
+  if (!assigneeId) return;
+  await fetch(`${BACKEND_URL}/api/tasks/${taskId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ assignee_id: parseInt(assigneeId, 10) }),
+  });
+  await refreshTasks();
+}
+
+// 페이지 로드 시, 저장된 프로젝트가 있으면 바로 대시보드로
+if (currentProjectId) {
+  loadProject(currentProjectId);
+}
+</script>
+
+</body>
+</html>
