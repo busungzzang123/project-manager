@@ -312,6 +312,14 @@
     font-size: 0.8em;
     margin-top: 0;
   }
+  .file-upload-row select.file-uploader-select {
+    width: auto;
+    flex-shrink: 0;
+    margin-top: 0;
+    padding: 8px 10px;
+    font-size: 0.8em;
+    max-width: 110px;
+  }
   .file-upload-btn {
     width: auto;
     flex-shrink: 0;
@@ -488,6 +496,13 @@
     <span id="role-loading" class="loading hidden">추천 중...</span>
   </div>
 
+  <h2>📊 팀원별 업로드 현황</h2>
+  <div class="card">
+    <div class="member-list" id="contribution-summary">
+      <span class="task-meta">아직 업로드된 파일이 없어요.</span>
+    </div>
+  </div>
+
   <h2>작업 현황</h2>
   <div id="task-list"></div>
 
@@ -498,6 +513,7 @@
 let currentProjectId = localStorage.getItem("projectId");
 let currentDeadline = null;
 let members = [];
+let fileUploadsByTask = {}; // { taskId: [uploader_name, ...] } — 기여도 요약용
 
 const AVATAR_COLORS = ["#6C5CE7", "#17A398", "#F0645C", "#3A86FF", "#E8A33D", "#B15EFF"];
 function colorForName(name) {
@@ -716,6 +732,9 @@ async function refreshTasks() {
     `${data.done_count} / ${data.total_count} 작업 완료`;
 
   const memberOptions = members.map((m) => `<option value="${m.id}">${m.name}</option>`).join("");
+  const memberNameOptions = members
+    .map((m) => `<option value="${escapeHtml(m.name)}">${escapeHtml(m.name)}</option>`)
+    .join("");
 
   document.getElementById("task-list").innerHTML = data.tasks
     .map((t) => {
@@ -749,6 +768,10 @@ async function refreshTasks() {
                   <span class="file-support-badge">PDF · Word(.docx) · PPT(.pptx) · 이미지 지원</span>
                 </div>
                 <div class="file-upload-row">
+                  <select id="file-uploader-${t.id}" class="file-uploader-select">
+                    <option value="">업로더 선택</option>
+                    ${memberNameOptions}
+                  </select>
                   <input type="file" id="file-input-${t.id}" />
                   <button type="button" class="file-upload-btn" onclick="uploadTaskFile(${t.id})">업로드</button>
                 </div>
@@ -797,6 +820,37 @@ function formatUploadedAt(isoString) {
   return `${d.getFullYear()}.${pad(d.getMonth() + 1)}.${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+function renderContributionSummary() {
+  const div = document.getElementById("contribution-summary");
+  if (!div) return;
+
+  const counts = {};
+  Object.values(fileUploadsByTask).forEach((names) => {
+    names.forEach((name) => {
+      counts[name] = (counts[name] || 0) + 1;
+    });
+  });
+
+  const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+
+  if (entries.length === 0) {
+    div.innerHTML = `<span class="task-meta">아직 업로더가 기록된 파일이 없어요. 업로드 시 '업로더 선택'을 채워주세요.</span>`;
+    return;
+  }
+
+  div.innerHTML = entries
+    .map(
+      ([name, count]) => `
+        <div class="member-chip">
+          <span class="avatar" style="background:${colorForName(name)}; width:26px; height:26px; font-size:0.7em;">${initials(name)}</span>
+          <span class="name">${escapeHtml(name)}</span>
+          <span class="strengths">파일 ${count}개</span>
+        </div>
+      `
+    )
+    .join("");
+}
+
 async function loadTaskFiles(taskId) {
   const listDiv = document.getElementById(`file-list-${taskId}`);
   if (!listDiv) return; // 카드가 다시 그려지며 사라진 경우 방지
@@ -805,6 +859,9 @@ async function loadTaskFiles(taskId) {
     const res = await fetch(`${BACKEND_URL}/api/tasks/${taskId}/files`);
     if (!res.ok) throw new Error("파일 목록을 불러오지 못했습니다.");
     const files = await res.json();
+
+    fileUploadsByTask[taskId] = files.map((f) => f.uploader_name).filter(Boolean);
+    renderContributionSummary();
 
     if (files.length === 0) {
       listDiv.innerHTML = `<div class="file-empty">업로드된 파일이 없어요.</div>`;
@@ -837,8 +894,10 @@ async function loadTaskFiles(taskId) {
 
 async function uploadTaskFile(taskId) {
   const input = document.getElementById(`file-input-${taskId}`);
+  const uploaderSelect = document.getElementById(`file-uploader-${taskId}`);
   const statusEl = document.getElementById(`file-upload-status-${taskId}`);
   const file = input.files[0];
+  const uploaderName = uploaderSelect ? uploaderSelect.value.trim() : "";
 
   if (!file) {
     statusEl.textContent = "파일을 선택해주세요.";
@@ -848,6 +907,7 @@ async function uploadTaskFile(taskId) {
 
   const formData = new FormData();
   formData.append("file", file);
+  if (uploaderName) formData.append("uploader_name", uploaderName);
 
   statusEl.textContent = "업로드 중...";
   statusEl.classList.remove("hidden");
