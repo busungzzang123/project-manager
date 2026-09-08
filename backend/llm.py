@@ -20,23 +20,34 @@ def _call_gemini(prompt: str) -> str:
     if not GEMINI_API_KEY:
         raise RuntimeError("GEMINI_API_KEY 환경변수가 설정되지 않았습니다 (.env 확인 필요)")
 
-    response = requests.post(
-        GEMINI_API_URL,
-        params={"key": GEMINI_API_KEY},
-        json={
-            "contents": [{"parts": [{"text": prompt}]}],
-            # JSON 형식으로만 답하도록 API 레벨에서 강제
-            "generationConfig": {"responseMimeType": "application/json"},
-        },
-        timeout=30,
-    )
-    response.raise_for_status()
+    try:
+        response = requests.post(
+            GEMINI_API_URL,
+            params={"key": GEMINI_API_KEY},
+            json={
+                "contents": [{"parts": [{"text": prompt}]}],
+                # JSON 형식으로만 답하도록 API 레벨에서 강제
+                "generationConfig": {"responseMimeType": "application/json"},
+            },
+            timeout=30,
+        )
+        response.raise_for_status()
+    except requests.exceptions.HTTPError as exc:
+        # requests의 기본 에러 메시지에는 API 키가 포함된 URL이 그대로 들어가므로,
+        # 상태 코드만 남기고 나머지는 걸러낸다.
+        status = exc.response.status_code if exc.response is not None else "알 수 없음"
+        raise RuntimeError(f"Gemini API 호출 실패 (status={status})") from None
+    except requests.exceptions.RequestException:
+        # 타임아웃, 연결 실패 등도 URL을 포함할 수 있으므로 동일하게 걸러낸다.
+        raise RuntimeError("Gemini API 요청 중 네트워크 오류가 발생했습니다") from None
+
     data = response.json()
 
     try:
         return data["candidates"][0]["content"]["parts"][0]["text"]
-    except (KeyError, IndexError) as exc:
-        raise RuntimeError(f"Gemini 응답 형식이 예상과 다릅니다: {data}") from exc
+    except (KeyError, IndexError):
+        # data를 그대로 메시지에 넣지 않는다 (민감 정보가 섞여 있을 가능성 방지).
+        raise RuntimeError("Gemini 응답 형식이 예상과 다릅니다") from None
 
 
 def _extract_json(text: str):
