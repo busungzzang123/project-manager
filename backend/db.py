@@ -52,6 +52,19 @@ def init_db():
             )
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS task_files (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                task_id INTEGER NOT NULL,
+                original_filename TEXT NOT NULL,
+                stored_filename TEXT NOT NULL,
+                uploader_name TEXT,
+                uploaded_at TEXT DEFAULT (datetime('now')),
+                FOREIGN KEY (task_id) REFERENCES tasks(id)
+            )
+            """
+        )
         conn.commit()
 
 

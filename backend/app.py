@@ -1,8 +1,12 @@
+import os
 import secrets
+import shutil
+import uuid
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from db import get_conn, init_db
@@ -16,6 +20,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+UPLOAD_DIR = os.environ.get("UPLOAD_DIR", "uploads")
+os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 
 @app.on_event("startup")
@@ -346,3 +353,77 @@ def recommend_project_roles(project_id: int):
         conn.commit()
 
     return {"updated_count": updated_count, "recommendations": recommendations}
+
+
+# ---------------------------------------------------------------------------
+# 파일 업로드/다운로드
+# ---------------------------------------------------------------------------
+
+
+@app.post("/api/tasks/{task_id}/files")
+async def upload_task_file(
+    task_id: int,
+    file: UploadFile = File(...),
+    uploader_name: str = Form(None),
+):
+    with get_conn() as conn:
+        row = conn.execute("SELECT id FROM tasks WHERE id = ?", (task_id,)).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="작업을 찾을 수 없습니다")
+
+    ext = os.path.splitext(file.filename)[1]
+    stored_filename = f"{uuid.uuid4().hex}{ext}"
+    file_path = os.path.join(UPLOAD_DIR, stored_filename)
+
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+
+    with get_conn() as conn:
+        cur = conn.execute(
+            """
+            INSERT INTO task_files (task_id, original_filename, stored_filename, uploader_name)
+            VALUES (?, ?, ?, ?)
+            """,
+            (task_id, file.filename, stored_filename, uploader_name),
+        )
+        conn.commit()
+        file_id = cur.lastrowid
+
+    return {
+        "id": file_id,
+        "task_id": task_id,
+        "original_filename": file.filename,
+        "uploader_name": uploader_name,
+    }
+
+
+@app.get("/api/tasks/{task_id}/files")
+def list_task_files(task_id: int):
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT id, original_filename, uploader_name, uploaded_at
+            FROM task_files WHERE task_id = ? ORDER BY uploaded_at DESC
+            """,
+            (task_id,),
+        ).fetchall()
+
+    return [dict(row) for row in rows]
+
+
+@app.get("/api/files/{file_id}/download")
+def download_file(file_id: int):
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT original_filename, stored_filename FROM task_files WHERE id = ?",
+            (file_id,),
+        ).fetchone()
+
+    if row is None:
+        raise HTTPException(status_code=404, detail="파일을 찾을 수 없습니다")
+
+    file_path = os.path.join(UPLOAD_DIR, row["stored_filename"])
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="파일이 서버에 없습니다")
+
+    return FileResponse(file_path, filename=row["original_filename"])
