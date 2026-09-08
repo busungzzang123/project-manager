@@ -277,6 +277,86 @@
     background: var(--line);
     margin: 22px 0 0;
   }
+
+  /* ===== 파일 업로드/목록 UI ===== */
+  .file-section {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px dashed var(--line);
+  }
+  .file-section-label {
+    font-size: 0.8em;
+    font-weight: 700;
+    color: var(--ink-soft);
+    margin-bottom: 6px;
+  }
+  .file-upload-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  .file-upload-row input[type="file"] {
+    flex: 1;
+    padding: 8px 10px;
+    font-size: 0.8em;
+    margin-top: 0;
+  }
+  .file-upload-btn {
+    width: auto;
+    flex-shrink: 0;
+    margin-top: 0;
+    padding: 9px 14px;
+    font-size: 0.82em;
+    background: var(--purple-tint);
+    color: var(--purple-dark);
+  }
+  .file-upload-btn:hover { background: #E2DBFA; }
+  .file-upload-status {
+    font-size: 0.78em;
+    color: var(--ink-soft);
+    margin-top: 6px;
+    display: block;
+  }
+  .file-list {
+    margin-top: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .file-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    background: #FBFAFF;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 8px 10px;
+    font-size: 0.82em;
+  }
+  .file-item .file-name {
+    font-weight: 600;
+    word-break: break-all;
+    flex: 1;
+    min-width: 0;
+  }
+  .file-item .file-meta {
+    color: var(--ink-soft);
+    font-size: 0.85em;
+    white-space: nowrap;
+  }
+  .file-item a.file-download {
+    color: var(--purple);
+    font-weight: 700;
+    text-decoration: none;
+    flex-shrink: 0;
+  }
+  .file-item a.file-download:hover { text-decoration: underline; }
+  .file-empty {
+    font-size: 0.8em;
+    color: var(--ink-soft);
+    margin-top: 6px;
+  }
 </style>
 </head>
 <body>
@@ -620,12 +700,25 @@ async function refreshTasks() {
                   ${memberOptions}
                 </select>
               </div>
+
+              <div class="file-section">
+                <div class="file-section-label">📎 첨부 파일</div>
+                <div class="file-upload-row">
+                  <input type="file" id="file-input-${t.id}" />
+                  <button type="button" class="file-upload-btn" onclick="uploadTaskFile(${t.id})">업로드</button>
+                </div>
+                <span id="file-upload-status-${t.id}" class="file-upload-status hidden"></span>
+                <div id="file-list-${t.id}" class="file-list"></div>
+              </div>
             </div>
           </div>
         </div>
       `;
     })
     .join("");
+
+  // 파일 목록은 작업마다 따로 불러와야 하므로, 렌더링 후 각 작업에 대해 호출
+  data.tasks.forEach((t) => loadTaskFiles(t.id));
 }
 
 async function toggleDone(taskId, done) {
@@ -645,6 +738,91 @@ async function assignTask(taskId, assigneeId) {
     body: JSON.stringify({ assignee_id: parseInt(assigneeId, 10) }),
   });
   await refreshTasks();
+}
+
+// ---------------------------------------------------------------------------
+// 파일 업로드/목록
+// ---------------------------------------------------------------------------
+
+function formatFileSize() {
+  return ""; // 서버가 파일 크기를 내려주지 않으므로 자리만 유지 (필요 시 확장)
+}
+
+function formatUploadedAt(isoString) {
+  if (!isoString) return "";
+  const d = new Date(isoString.includes("T") ? isoString : isoString.replace(" ", "T"));
+  if (isNaN(d.getTime())) return isoString;
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}.${pad(d.getMonth() + 1)}.${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+async function loadTaskFiles(taskId) {
+  const listDiv = document.getElementById(`file-list-${taskId}`);
+  if (!listDiv) return; // 카드가 다시 그려지며 사라진 경우 방지
+
+  try {
+    const res = await fetch(`${BACKEND_URL}/api/tasks/${taskId}/files`);
+    if (!res.ok) throw new Error("파일 목록을 불러오지 못했습니다.");
+    const files = await res.json();
+
+    if (files.length === 0) {
+      listDiv.innerHTML = `<div class="file-empty">업로드된 파일이 없어요.</div>`;
+      return;
+    }
+
+    listDiv.innerHTML = files
+      .map(
+        (f) => `
+          <div class="file-item">
+            <span class="file-name">📄 ${f.original_filename}</span>
+            <span class="file-meta">${f.uploader_name ? f.uploader_name + " · " : ""}${formatUploadedAt(f.uploaded_at)}</span>
+            <a class="file-download" href="${BACKEND_URL}/api/files/${f.id}/download" target="_blank" rel="noopener">다운로드</a>
+          </div>
+        `
+      )
+      .join("");
+  } catch (err) {
+    listDiv.innerHTML = `<div class="file-empty">파일 목록을 불러오지 못했습니다.</div>`;
+  }
+}
+
+async function uploadTaskFile(taskId) {
+  const input = document.getElementById(`file-input-${taskId}`);
+  const statusEl = document.getElementById(`file-upload-status-${taskId}`);
+  const file = input.files[0];
+
+  if (!file) {
+    statusEl.textContent = "파일을 선택해주세요.";
+    statusEl.classList.remove("hidden");
+    return;
+  }
+
+  const uploaderName = (() => {
+    // 담당자로 지정된 팀원이 있으면 이름을 자동으로 넣어주고, 없으면 비워둠
+    return null;
+  })();
+
+  const formData = new FormData();
+  formData.append("file", file);
+  if (uploaderName) formData.append("uploader_name", uploaderName);
+
+  statusEl.textContent = "업로드 중...";
+  statusEl.classList.remove("hidden");
+
+  try {
+    const res = await fetch(`${BACKEND_URL}/api/tasks/${taskId}/files`, {
+      method: "POST",
+      body: formData,
+    });
+    if (!res.ok) throw new Error("업로드 실패");
+
+    input.value = "";
+    statusEl.textContent = "업로드 완료!";
+    await loadTaskFiles(taskId);
+    setTimeout(() => statusEl.classList.add("hidden"), 2000);
+  } catch (err) {
+    statusEl.textContent = "업로드 실패: " + err.message;
+  }
 }
 
 // 페이지 로드 시, 저장된 프로젝트가 있으면 바로 대시보드로
