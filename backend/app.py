@@ -2,6 +2,7 @@ import os
 import secrets
 import shutil
 import uuid
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
@@ -10,7 +11,13 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from db import get_conn, init_db
-from llm import generate_task_plan, recommend_roles
+from file_extract import (
+    get_file_kind,
+    extract_text_from_pdf,
+    extract_text_from_docx,
+    extract_text_from_pptx,
+)
+from llm import generate_task_plan, recommend_roles, review_submission
 
 app = FastAPI()
 
@@ -23,6 +30,9 @@ app.add_middleware(
 
 UPLOAD_DIR = os.environ.get("UPLOAD_DIR", "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+# AI 피드백 기능이 지원하는 파일 종류
+SUPPORTED_REVIEW_KINDS = {"pdf", "docx", "pptx", "image"}
 
 
 @app.on_event("startup")
@@ -402,7 +412,7 @@ def list_task_files(task_id: int):
     with get_conn() as conn:
         rows = conn.execute(
             """
-            SELECT id, original_filename, uploader_name, uploaded_at
+            SELECT id, original_filename, uploader_name, uploaded_at, ai_feedback, ai_feedback_at
             FROM task_files WHERE task_id = ? ORDER BY uploaded_at DESC
             """,
             (task_id,),
@@ -427,3 +437,77 @@ def download_file(file_id: int):
         raise HTTPException(status_code=404, detail="파일이 서버에 없습니다")
 
     return FileResponse(file_path, filename=row["original_filename"])
+
+
+# ---------------------------------------------------------------------------
+# AI 파일 피드백 — 업로드된 파일을 작업 계획 기준으로 검토
+# ---------------------------------------------------------------------------
+
+
+@app.post("/api/files/{file_id}/review")
+def review_task_file(file_id: int):
+    with get_conn() as conn:
+        file_row = conn.execute(
+            "SELECT id, task_id, original_filename, stored_filename FROM task_files WHERE id = ?",
+            (file_id,),
+        ).fetchone()
+        if file_row is None:
+            raise HTTPException(status_code=404, detail="파일을 찾을 수 없습니다")
+
+        task_row = conn.execute(
+            "SELECT id, title, description, due_date, review_criteria FROM tasks WHERE id = ?",
+            (file_row["task_id"],),
+        ).fetchone()
+        if task_row is None:
+            raise HTTPException(status_code=404, detail="작업을 찾을 수 없습니다")
+
+    kind = get_file_kind(file_row["original_filename"])
+    if kind not in SUPPORTED_REVIEW_KINDS:
+        raise HTTPException(
+            status_code=400,
+            detail="지원하지 않는 파일 형식입니다 (PDF, Word(.docx), PPT(.pptx), 이미지만 지원)",
+        )
+
+    file_path = os.path.join(UPLOAD_DIR, file_row["stored_filename"])
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="파일이 서버에 없습니다")
+
+    extracted_text = None
+    image_path = None
+
+    try:
+        if kind == "pdf":
+            extracted_text = extract_text_from_pdf(file_path)
+        elif kind == "docx":
+            extracted_text = extract_text_from_docx(file_path)
+        elif kind == "pptx":
+            extracted_text = extract_text_from_pptx(file_path)
+        elif kind == "image":
+            image_path = file_path
+    except Exception:
+        raise HTTPException(
+            status_code=422,
+            detail="파일 내용을 읽는 중 오류가 발생했습니다. 파일이 손상되지 않았는지 확인해주세요",
+        ) from None
+
+    if kind in ("pdf", "docx", "pptx") and not extracted_text:
+        raise HTTPException(
+            status_code=422,
+            detail="파일에서 텍스트를 추출하지 못했습니다 (스캔 이미지로 된 PDF 등은 지원하지 않습니다)",
+        )
+
+    try:
+        feedback = review_submission(dict(task_row), extracted_text=extracted_text, image_path=image_path)
+    except Exception as exc:
+        # llm.py에서 이미 API 키/URL이 안 남도록 정리된 메시지만 올라오므로 그대로 노출해도 안전함
+        raise HTTPException(status_code=502, detail=f"AI 피드백 생성 실패: {exc}")
+
+    generated_at = datetime.now(timezone.utc).isoformat()
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE task_files SET ai_feedback = ?, ai_feedback_at = ? WHERE id = ?",
+            (feedback, generated_at, file_id),
+        )
+        conn.commit()
+
+    return {"id": file_id, "ai_feedback": feedback, "ai_feedback_at": generated_at}

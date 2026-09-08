@@ -65,6 +65,16 @@ def init_db():
             )
             """
         )
+
+        # ---- 마이그레이션: 이미 배포되어 있던 DB에도 AI 피드백 컬럼을 추가한다 ----
+        existing_cols = {
+            row["name"] for row in conn.execute("PRAGMA table_info(task_files)").fetchall()
+        }
+        if "ai_feedback" not in existing_cols:
+            conn.execute("ALTER TABLE task_files ADD COLUMN ai_feedback TEXT")
+        if "ai_feedback_at" not in existing_cols:
+            conn.execute("ALTER TABLE task_files ADD COLUMN ai_feedback_at TEXT")
+
         conn.commit()
 
 

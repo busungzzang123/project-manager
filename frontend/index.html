@@ -288,12 +288,23 @@
     font-size: 0.8em;
     font-weight: 700;
     color: var(--ink-soft);
-    margin-bottom: 6px;
+    margin-bottom: 4px;
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .file-support-badge {
+    font-size: 0.85em;
+    font-weight: 500;
+    color: var(--ink-soft);
+    opacity: 0.85;
   }
   .file-upload-row {
     display: flex;
     gap: 8px;
     align-items: center;
+    margin-top: 6px;
   }
   .file-upload-row input[type="file"] {
     flex: 1;
@@ -321,29 +332,32 @@
     margin-top: 8px;
     display: flex;
     flex-direction: column;
-    gap: 6px;
-  }
-  .file-item {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
     gap: 8px;
+  }
+  .file-item-wrap {
     background: #FBFAFF;
     border: 1px solid var(--line);
     border-radius: 10px;
     padding: 8px 10px;
+  }
+  .file-item {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px 8px;
     font-size: 0.82em;
   }
   .file-item .file-name {
     font-weight: 600;
     word-break: break-all;
-    flex: 1;
+    flex: 1 1 100%;
     min-width: 0;
   }
   .file-item .file-meta {
     color: var(--ink-soft);
     font-size: 0.85em;
     white-space: nowrap;
+    margin-right: auto;
   }
   .file-item a.file-download {
     color: var(--purple);
@@ -352,6 +366,27 @@
     flex-shrink: 0;
   }
   .file-item a.file-download:hover { text-decoration: underline; }
+  .file-feedback-btn {
+    width: auto;
+    flex-shrink: 0;
+    margin-top: 0;
+    padding: 6px 10px;
+    font-size: 0.78em;
+    background: var(--teal-tint);
+    color: var(--teal);
+    font-weight: 700;
+  }
+  .file-feedback-btn:hover { background: #D3EFEA; }
+  .file-feedback {
+    margin-top: 8px;
+    padding: 10px 12px;
+    background: var(--purple-tint);
+    border-radius: 10px;
+    font-size: 0.82em;
+    color: var(--ink);
+    white-space: pre-wrap;
+    line-height: 1.55;
+  }
   .file-empty {
     font-size: 0.8em;
     color: var(--ink-soft);
@@ -472,6 +507,13 @@ function colorForName(name) {
 }
 function initials(name) {
   return name.trim().slice(0, 2);
+}
+
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 }
 
 function showError(elementId, message) {
@@ -702,7 +744,10 @@ async function refreshTasks() {
               </div>
 
               <div class="file-section">
-                <div class="file-section-label">📎 첨부 파일</div>
+                <div class="file-section-label">
+                  📎 첨부 파일
+                  <span class="file-support-badge">PDF · Word(.docx) · PPT(.pptx) · 이미지 지원</span>
+                </div>
                 <div class="file-upload-row">
                   <input type="file" id="file-input-${t.id}" />
                   <button type="button" class="file-upload-btn" onclick="uploadTaskFile(${t.id})">업로드</button>
@@ -741,12 +786,8 @@ async function assignTask(taskId, assigneeId) {
 }
 
 // ---------------------------------------------------------------------------
-// 파일 업로드/목록
+// 파일 업로드/목록/AI 피드백
 // ---------------------------------------------------------------------------
-
-function formatFileSize() {
-  return ""; // 서버가 파일 크기를 내려주지 않으므로 자리만 유지 (필요 시 확장)
-}
 
 function formatUploadedAt(isoString) {
   if (!isoString) return "";
@@ -771,15 +812,23 @@ async function loadTaskFiles(taskId) {
     }
 
     listDiv.innerHTML = files
-      .map(
-        (f) => `
-          <div class="file-item">
-            <span class="file-name">📄 ${f.original_filename}</span>
-            <span class="file-meta">${f.uploader_name ? f.uploader_name + " · " : ""}${formatUploadedAt(f.uploaded_at)}</span>
-            <a class="file-download" href="${BACKEND_URL}/api/files/${f.id}/download" target="_blank" rel="noopener">다운로드</a>
+      .map((f) => {
+        const hasFeedback = !!f.ai_feedback;
+        const feedbackHtml = hasFeedback ? escapeHtml(f.ai_feedback) : "";
+        return `
+          <div class="file-item-wrap">
+            <div class="file-item">
+              <span class="file-name">📄 ${escapeHtml(f.original_filename)}</span>
+              <span class="file-meta">${f.uploader_name ? escapeHtml(f.uploader_name) + " · " : ""}${formatUploadedAt(f.uploaded_at)}</span>
+              <a class="file-download" href="${BACKEND_URL}/api/files/${f.id}/download" target="_blank" rel="noopener">다운로드</a>
+              <button type="button" class="file-feedback-btn" onclick="requestFileReview(${f.id})">
+                ${hasFeedback ? "🤖 다시 검토" : "🤖 AI 피드백"}
+              </button>
+            </div>
+            <div id="file-feedback-${f.id}" class="file-feedback ${hasFeedback ? "" : "hidden"}">${feedbackHtml}</div>
           </div>
-        `
-      )
+        `;
+      })
       .join("");
   } catch (err) {
     listDiv.innerHTML = `<div class="file-empty">파일 목록을 불러오지 못했습니다.</div>`;
@@ -797,14 +846,8 @@ async function uploadTaskFile(taskId) {
     return;
   }
 
-  const uploaderName = (() => {
-    // 담당자로 지정된 팀원이 있으면 이름을 자동으로 넣어주고, 없으면 비워둠
-    return null;
-  })();
-
   const formData = new FormData();
   formData.append("file", file);
-  if (uploaderName) formData.append("uploader_name", uploaderName);
 
   statusEl.textContent = "업로드 중...";
   statusEl.classList.remove("hidden");
@@ -822,6 +865,26 @@ async function uploadTaskFile(taskId) {
     setTimeout(() => statusEl.classList.add("hidden"), 2000);
   } catch (err) {
     statusEl.textContent = "업로드 실패: " + err.message;
+  }
+}
+
+async function requestFileReview(fileId) {
+  const feedbackDiv = document.getElementById(`file-feedback-${fileId}`);
+  if (!feedbackDiv) return;
+
+  feedbackDiv.classList.remove("hidden");
+  feedbackDiv.textContent = "🤖 AI가 검토 중이에요... (최대 1분 정도 걸릴 수 있어요)";
+
+  try {
+    const res = await fetch(`${BACKEND_URL}/api/files/${fileId}/review`, { method: "POST" });
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.detail || "AI 피드백 생성 실패");
+    }
+    const data = await res.json();
+    feedbackDiv.textContent = data.ai_feedback;
+  } catch (err) {
+    feedbackDiv.textContent = "피드백 생성 실패: " + err.message;
   }
 }
 
